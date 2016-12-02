@@ -100,6 +100,38 @@ local function player_exists(player)
 	return player ~= nil and player:is_player()
 end
 
+local function barindex_to_pos_and_offset(index)
+	local pos, offset
+	if hb.settings.alignment_pattern == "stack_up" then
+		pos = hb.settings.pos_left
+		offset = {
+			x = hb.settings.start_offset_left.x,
+			y = hb.settings.start_offset_left.y - hb.settings.vmargin * index
+		}
+	elseif hb.settings.alignment_pattern == "stack_down" then
+		pos = hb.settings.pos_left
+		offset = {
+			x = hb.settings.start_offset_left.x,
+			y = hb.settings.start_offset_left.y + hb.settings.vmargin * index
+		}
+	else
+		if index % 2 == 0 then
+			pos = hb.settings.pos_left
+			offset = {
+				x = hb.settings.start_offset_left.x,
+				y = hb.settings.start_offset_left.y - hb.settings.vmargin * (index/2)
+			}
+		else
+			pos = hb.settings.pos_right
+			offset = {
+				x = hb.settings.start_offset_right.x,
+				y = hb.settings.start_offset_right.y - hb.settings.vmargin * ((index-1)/2)
+			}
+		end
+	end
+	return pos, offset
+end
+
 -- Table which contains all players with active default HUD bars (only for internal use)
 hb.players = {}
 
@@ -145,33 +177,9 @@ function hb.register_hudbar(identifier, text_color, label, textures, default_sta
 	local pos, offset
 	local index = math.floor(hb.get_hudbar_position_index(identifier))
 	hb.registered_slots[index] = true
-	if hb.settings.alignment_pattern == "stack_up" then
-		pos = hb.settings.pos_left
-		offset = {
-			x = hb.settings.start_offset_left.x,
-			y = hb.settings.start_offset_left.y - hb.settings.vmargin * index
-		}
-	elseif hb.settings.alignment_pattern == "stack_down" then
-		pos = hb.settings.pos_left
-		offset = {
-			x = hb.settings.start_offset_left.x,
-			y = hb.settings.start_offset_left.y + hb.settings.vmargin * index
-		}
-	else
-		if index % 2 == 0 then
-			pos = hb.settings.pos_left
-			offset = {
-				x = hb.settings.start_offset_left.x,
-				y = hb.settings.start_offset_left.y - hb.settings.vmargin * (index/2)
-			}
-		else
-			pos = hb.settings.pos_right
-			offset = {
-				x = hb.settings.start_offset_right.x,
-				y = hb.settings.start_offset_right.y - hb.settings.vmargin * ((index-1)/2)
-			}
-		end
-	end
+
+	pos, offset = barindex_to_pos_and_offset(index)
+
 	if format_string == nil then
 		format_string = S("%s: %d/%d")
 	end
@@ -241,7 +249,7 @@ function hb.register_hudbar(identifier, text_color, label, textures, default_sta
 			bar_image = textures.icon
 			bar_size = {x=24, y=24}
 		end
-		ids.bar = player:hud_add({
+		local bardef = {
 			hud_elem_type = "statbar",
 			position = pos,
 			text = bar_image,
@@ -250,7 +258,10 @@ function hb.register_hudbar(identifier, text_color, label, textures, default_sta
 			offset = offset,
 			direction = 0,
 			size = bar_size,
-		})
+		}
+		if hudtable.identifier ~= "health" and hudtable.identifier ~= "breath" then
+			ids.bar = player:hud_add(bardef)
+		end
 		if hb.settings.bar_type == "progress_bar" then
 			ids.text = player:hud_add({
 				hud_elem_type = "text",
@@ -296,7 +307,7 @@ function hb.register_hudbar(identifier, text_color, label, textures, default_sta
 	hudtable.default_start_max = default_start_max
 
 	hb.hudbars_count= hb.hudbars_count + 1
-	
+
 	hb.hudtables[identifier] = hudtable
 end
 
@@ -343,7 +354,7 @@ function hb.change_hudbar(player, identifier, new_value, new_max_value, new_icon
 		if new_bgicon ~= nil and hudtable.hudids[name].bgicon ~= nil then
 			player:hud_change(hudtable.hudids[name].bgicon, "text", new_bgicon)
 		end
-		if new_bar ~= nil then
+		if new_bar ~= nil and hudtable.hudids[name].bar ~= nil then
 			player:hud_change(hudtable.hudids[name].bar , "text", new_bar)
 		end
 		if new_label ~= nil then
@@ -386,7 +397,7 @@ function hb.change_hudbar(player, identifier, new_value, new_max_value, new_icon
 
 		if value_changed or max_changed then
 			local new_barlength = hb.value_to_barlength(new_value, new_max_value)
-			if new_barlength ~= hudtable.hudstate[name].barlength then
+			if new_barlength ~= hudtable.hudstate[name].barlength and hudtable.hudids[name].bar ~= nil then
 				player:hud_change(hudtable.hudids[name].bar, "number", hb.value_to_barlength(new_value, new_max_value))
 				hudtable.hudstate[name].barlength = new_barlength
 			end
@@ -418,7 +429,9 @@ function hb.hide_hudbar(player, identifier)
 		elseif hb.settings.bar_type == "statbar_modern" then
 			player:hud_change(hudtable.hudids[name].bg, "number", 0)
 		end
-		player:hud_change(hudtable.hudids[name].bar, "number", 0)
+		if hudtable.hudids[name].bar ~= nil then
+			player:hud_change(hudtable.hudids[name].bar, "number", 0)
+		end
 		hudtable.hudstate[name].hidden = true
 	end
 	return true
@@ -443,7 +456,9 @@ function hb.unhide_hudbar(player, identifier)
 		elseif hb.settings.bar_type == "statbar_modern" then
 			player:hud_change(hudtable.hudids[name].bg, "number", hb.settings.statbar_length)
 		end
-		player:hud_change(hudtable.hudids[name].bar, "number", hb.value_to_barlength(value, max))
+		if hudtable.hudids[name].bar ~= nil then
+			player:hud_change(hudtable.hudids[name].bar, "number", hb.value_to_barlength(value, max))
+		end
 		hudtable.hudstate[name].hidden = false
 	end
 	return true
@@ -465,17 +480,59 @@ end
 
 --register built-in HUD bars
 if minetest.setting_getbool("enable_damage") or hb.settings.forceload_default_hudbars then
-	hb.register_hudbar("health", 0xFFFFFF, S("Health"), { bar = "hudbars_bar_health.png", icon = "hudbars_icon_health.png", bgicon = "hudbars_bgicon_health.png" }, 20, 20, false)
-	hb.register_hudbar("breath", 0xFFFFFF, S("Breath"), { bar = "hudbars_bar_breath.png", icon = "hudbars_icon_breath.png", bgicon = "hudbars_bgicon_breath.png" }, 10, 10, true)
-end
+	local healthtextures = { bar = "hudbars_bar_health.png", icon = "hudbars_icon_health.png", bgicon = "hudbars_bgicon_health.png" }
+	local breathtextures = { bar = "hudbars_bar_breath.png", icon = "hudbars_icon_breath.png", bgicon = "hudbars_bgicon_breath.png" }
 
-local function hide_builtin(player)
-	local flags = player:hud_get_flags()
-	flags.healthbar = false
-	flags.breathbar = false
-	player:hud_set_flags(flags)
-end
+	hb.register_hudbar("health", 0xFFFFFF, S("Health"), healthtextures, 20, 20, false)
+	hb.register_hudbar("breath", 0xFFFFFF, S("Breath"), breathtextures, 10, 10, true)
 
+	-- Overwrite the builtin statbars for the best client prediction
+
+	-- FIXME: Health icons are drawn behind the modern statbar background
+	-- FIXME: Breath bar is drawn above text
+
+	local bar_health, bar_breath, size_health, size_breath
+	if hb.settings.bar_type == "progress_bar" then
+		bar_health = healthtextures.bar
+		bar_breath = breathtextures.bar
+		size_health  = {x=hb.value_to_barlength(1,20)*2, y=16}
+		size_breath = {x=hb.value_to_barlength(1,20)*2, y=16}
+	elseif hb.settings.bar_type == "statbar_classic" or hb.settings.bar_type == "statbar_modern" then
+		bar_health = healthtextures.icon
+		bar_breath = breathtextures.icon
+		size_health = {x=24, y=24}
+		size_breath = {x=24, y=24}
+	end
+
+	local hudtable = hb.get_hudtable("health")
+	local pos, offset = barindex_to_pos_and_offset(hb.get_hudbar_position_index("health"))
+	local bardef = {
+		hud_elem_type = "statbar",
+		position = pos,
+		text = bar_health,
+		number = 20,
+		alignment = {x=-1,y=-1},
+		offset = offset,
+		direction = 0,
+		size = size_health,
+	}
+	minetest.hud_replace_builtin("health", bardef)
+
+	pos, offset = barindex_to_pos_and_offset(hb.get_hudbar_position_index("breath"))
+	hudtable = hb.get_hudtable("breath")
+	bardef = {
+		hud_elem_type = "statbar",
+		position = pos,
+		text = bar_breath,
+		number = 20,
+		alignment = {x=-1,y=-1},
+		offset = offset,
+		direction = 0,
+		size = size_breath,
+	}
+	minetest.hud_replace_builtin("breath", bardef)
+
+end
 
 local function custom_hud(player)
 	if minetest.setting_getbool("enable_damage") or hb.settings.forceload_default_hudbars then
@@ -506,7 +563,7 @@ local function update_hud(player)
 		end
 		--air
 		local breath = player:get_breath()
-		
+
 		if breath == 11 and hb.settings.autohide_breath == true then
 			hb.hide_hudbar(player, "breath")
 		else
@@ -529,7 +586,6 @@ minetest.register_on_respawnplayer(function(player)
 end)
 
 minetest.register_on_joinplayer(function(player)
-	hide_builtin(player)
 	custom_hud(player)
 	hb.players[player:get_player_name()] = player
 end)
