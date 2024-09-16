@@ -61,6 +61,10 @@ local function player_exists(player)
 end
 
 local function make_label(format_string, format_string_config, label, start_value, max_value)
+	if hb.settings.hide_labels then
+		return ""
+	end
+
 	local params = {}
 	local order = format_string_config.order
 	for o=1, #order do
